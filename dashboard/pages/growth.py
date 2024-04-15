@@ -11,17 +11,17 @@ layout = dbc.Container(
                dbc.Row(
     [
         dbc.Col(
-            html.Div("Select region:", className="dropdown-label"),
+            html.Div("Select month:", className="dropdown-label"),
             width=1,
         ),
         dbc.Col(
             dcc.Dropdown(
-                id='region-dropdown',
+                id='month-dropdown',
                 options=[
-                    {'label': region, 'value': region}
-                    for region in app_config['regions']
+                    {'label': month.split(', ')[0], 'value': month.split(', ')[1]}
+                    for month in app_config['months']
                 ],
-                value='South East',  # Default selected region
+                value=1,  # Default selected region
             ),
             width=2
         ),
@@ -89,18 +89,18 @@ layout = dbc.Container(
 @callback(
     Output('fastest-growing-map', 'figure'),
     [Input('year-dropdown', 'value'),
-     Input('region-dropdown', 'value'),
+     Input('month-dropdown', 'value'),
      Input('slider','value')]
 )
-def update_fastest_growing_callback(selected_year,selected_region,slider_value):
-    return update_fastest_growing_plot(selected_year, selected_region, slider_value)
+def update_fastest_growing_callback(selected_year,selected_month,slider_value):
+    return update_fastest_growing_plot(selected_year, selected_month, slider_value)
 
 # Callback for fastest declining map
 @callback(
     Output('fastest-declining-map', 'figure'),
     [Input('year-dropdown', 'value'),
-     Input('region-dropdown', 'value'),
+     Input('month-dropdown', 'value'),
      Input('slider','value')]
 )
-def update_fastest_declining_callback(selected_year,selected_region,slider_value):
-    return update_fastest_declining_plot(selected_year, selected_region, slider_value)
+def update_fastest_declining_callback(selected_year,selected_month,slider_value):
+    return update_fastest_declining_plot(selected_year, selected_month, slider_value)

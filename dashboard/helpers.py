@@ -12,71 +12,8 @@ from backend.data_analysis import DataAnalysis
 working_dir = './data/'
 data = DataAnalysis(working_dir)
 
-# Define the GeoJSON data globally
-geojson_data = None
-current_selected_region = None
-
-# Read GeoJSON file for the selected region
-def read_geojson(selected_region):
-    global geojson_data
-    global current_selected_region
-
-    if current_selected_region != selected_region or geojson_data is None:
-        geojson_file_path = f'geo_json/regions/{selected_region}_postcode_sectors.geojson'
-        with open(geojson_file_path, 'r') as geojson_file:
-            geojson_data = json.load(geojson_file)
-        current_selected_region = selected_region
-
-    return geojson_data
-
-def update_map(selected_year, selected_region):
-    # Load the CSV file based on the selected year
-    csv_file_path = f'processed_data/average_price_by_year/region_data_{selected_year}.csv'
-    data = pd.read_csv(csv_file_path)
-
-    # Filter the data to the selected region
-    data = data[data['region'] == selected_region]
-
-    # Check if geojson is loaded for the selected region, load if not
-    read_geojson(selected_region)
-
-    key_min = np.percentile(data.avg_price, 5)
-    key_max = np.percentile(data.avg_price, 95)
-
-    # Fetch the configuration for the selected region
-    region_config = app_config['regions'][selected_region]
-
-    # Create choropleth map
-    fig = px.choropleth_mapbox(
-        data,
-        geojson=geojson_data,
-        locations='postcode_sector',
-        featureidkey='properties.name',
-        color='avg_price',
-        color_continuous_scale='Viridis',
-        mapbox_style='carto-positron',
-        range_color=[key_min, key_max],
-        center=region_config['center'],
-        zoom=region_config['zoom'],
-        opacity=0.5,
-        labels={'avg_price': 'Average Price £'},
-        title=f'Average price by postcode sector for {selected_region} in {selected_year}',
-        hover_data={'volume': True},
-    )
-
-    # Update layout attributes
-    fig.update_layout(
-        mapbox=dict(style='carto-positron'),
-        paper_bgcolor='#343a40',
-        plot_bgcolor='#343a40',
-        font_color='white',
-        legend=dict(title=dict(text='Legend Title'), orientation='h', x=1, y=1.02),
-    )
-
-    return fig
-
-def update_montly_transaction_bar_plot(selected_year,selected_region, start_date, end_date, data=data):
-
+def update_montly_transaction_bar_plot(selected_year,selected_month, data=data):
+    data.yoy_filtering_data(selected_year, selected_month)
     analyzed_data = data.count_transactions_per_month()
 
     # Create stacked bar plot
@@ -84,7 +21,7 @@ def update_montly_transaction_bar_plot(selected_year,selected_region, start_date
         analyzed_data,
         x='Month',
         y='Total Transactions',
-        title=f'Total Monthly Transactions from {start_date} to {end_date}',
+        title=f'Total Monthly Transactions YoY - {selected_month}/{selected_year}',
         barmode='stack',  # Set the barmode to 'stack' for stacked bars
     )
 
@@ -100,19 +37,23 @@ def update_montly_transaction_bar_plot(selected_year,selected_region, start_date
 
     return fig
 
-def update_hourly_transaction_bar_plot(selected_year,selected_region, start_date, end_date, data=data):
-
+def update_hourly_transaction_bar_plot(selected_year,selected_month, data=data, yoy=True):
+    if yoy == True:
+        data.yoy_filtering_data(selected_year, selected_month)
+    else:
+        data.month_filtering_data(selected_year, selected_month)
     analyzed_data = data.count_transactions_per_hour()
 
     # Create stacked bar plot
-    fig = px.bar(
-        analyzed_data,
-        x='Hour',
-        y='Total Transactions',
-        title=f'Total Hourly Transactions from {start_date} to {end_date}'
-    )
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=analyzed_data['Hour'],
+        y=analyzed_data['Total Transactions'],
+        marker_color='#90a4ae',
+    ))
 
     fig.update_layout(
+        title=f'Total Hourly Transactions YoY - {selected_month}/{selected_year}',
         xaxis_title='Hour',
         yaxis_title='Total Transactions',
         yaxis2=dict(title='Volume',overlaying='y',showgrid=False, side='right'),
@@ -124,21 +65,37 @@ def update_hourly_transaction_bar_plot(selected_year,selected_region, start_date
 
     return fig
 
-def update_revenue_per_month_bar_plot(selected_year, data=data):
+def update_revenue_per_month_bar_plot(selected_year, selected_month, data=data):
+    data.yoy_filtering_data(selected_year, selected_month)
     analyzed_data = data.count_revenue_per_month()
+    transaction_per_month = data.count_transactions_per_month()
 
     # Create stacked bar plot
-    fig = px.bar(
-        analyzed_data,
-        x='Month',
-        y='Total Revenue',
-        title=f'Total Revenue per Month in The Year of {selected_year}'
-    )
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        x=analyzed_data['Month-Year'],
+        y=analyzed_data['Total Revenue'],
+        marker_color='#90a4ae',
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=transaction_per_month['Month-Year'],
+        y=transaction_per_month['Total Transactions'],
+        # mode='lines+markers',
+        name='Transaction',
+        yaxis='y2'
+    ))
 
     fig.update_layout(
-        xaxis_title='Month',
+        title=f'Total Revenue per Month YoY - {selected_month}/{selected_year}',
+        xaxis_title='Date',
         yaxis_title='Total Revenue',
-        yaxis2=dict(title='Volume',overlaying='y',showgrid=False, side='right'),
+        yaxis2=dict(title='Total Transaction',
+                    rangemode='tozero',
+                    overlaying='y',
+                    showgrid=False, 
+                    side='right'),
         plot_bgcolor='#343a40',
         paper_bgcolor='#343a40',
         font_color='white',
@@ -147,18 +104,63 @@ def update_revenue_per_month_bar_plot(selected_year, data=data):
 
     return fig
 
-def update_sold_product_bar_plot(selected_year, data=data):
+def update_revenue_per_day_bar_plot(selected_year, selected_month, data=data, yoy=True):
+    if yoy == True:
+        data.yoy_filtering_data(selected_year, selected_month)
+    else:
+        data.month_filtering_data(selected_year, selected_month)
+    analyzed_data = data.count_revenue_per_day()
+    transaction_per_day = data.count_transaction_per_day()
+
+    # Create stacked bar plot
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=analyzed_data['Day Name'],
+        y=analyzed_data['Total Revenue'],
+        marker_color='#90a4ae',
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=transaction_per_day['Day Name'],
+        y=transaction_per_day['Total Transaction'],
+        # mode='lines+markers',
+        name='Transaction',
+        yaxis='y2'
+    ))
+
+    fig.update_layout(
+        title=f'Total Revenue per Week YoY - {selected_month}/{selected_year}',
+        xaxis_title='Day',
+        yaxis_title='Total Revenue',
+        yaxis2=dict(title='Total Transaction',
+                    rangemode='tozero',
+                    overlaying='y', 
+                    side='right', 
+                    showgrid=False),
+        plot_bgcolor='#343a40',
+        paper_bgcolor='#343a40',
+        font_color='white',
+        legend=dict(title=dict(text='Property Type'), orientation='h', yanchor="bottom", y=1.02,xanchor="right",x=1)
+    )
+
+    return fig
+
+def update_sold_product_bar_plot(selected_year, selected_month, data=data, yoy=True):
+    if yoy == True:
+        data.yoy_filtering_data(selected_year, selected_month)
+    else:
+        data.month_filtering_data(selected_year, selected_month)
     analyzed_data = data.count_sold_products()
     total_sum = analyzed_data['Total Sold'].sum()
     analyzed_data['Cumulative'] = analyzed_data['Total Sold'].cumsum()/total_sum
 
     # Create stacked bar plot
-    fig = px.bar(
-        analyzed_data,
-        x='Product',
-        y='Total Sold',
-        title=f'Sold Product in The Year of {selected_year}'
-    )
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=analyzed_data['Product'],
+        y=analyzed_data['Total Sold'],
+        marker_color='#90a4ae',
+    ))
 
     fig.add_trace(go.Scatter(
         x=analyzed_data['Product'],
@@ -169,6 +171,7 @@ def update_sold_product_bar_plot(selected_year, data=data):
     ))
 
     fig.update_layout(
+        title=f'Total Sold Product YoY - {selected_month}/{selected_year}' if yoy==True else f'Sold Product in {selected_month}/{selected_year}',
         xaxis_title='Product',
         yaxis_title='Total Sold',
         yaxis2=dict(title='Cumulative', overlaying='y', side='right', showgrid=False),
@@ -184,18 +187,22 @@ def update_sold_product_bar_plot(selected_year, data=data):
 
     return fig
 
-def update_revenue_product_bar_plot(selected_year, data=data):
+def update_revenue_product_bar_plot(selected_year, selected_month, data=data, yoy=True):
+    if yoy == True:
+        data.yoy_filtering_data(selected_year, selected_month)
+    else:
+        data.month_filtering_data(selected_year, selected_month)
     analyzed_data = data.count_revenue_per_product()
     total_sum = analyzed_data['Total Revenue Product'].sum()
     analyzed_data['Cumulative'] = analyzed_data['Total Revenue Product'].cumsum()/total_sum
 
     # Create stacked bar plot
-    fig = px.bar(
-        analyzed_data,
-        x='Product',
-        y='Total Revenue Product',
-        title=f'Sold Product in The Year of {selected_year}'
-    )
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=analyzed_data['Product'],
+        y=analyzed_data['Total Revenue Product'],
+        marker_color='#90a4ae',
+    ))
 
     fig.add_trace(go.Scatter(
         x=analyzed_data['Product'],
@@ -206,8 +213,9 @@ def update_revenue_product_bar_plot(selected_year, data=data):
     ))
 
     fig.update_layout(
+        title=f'Total Revenue Product YoY - {selected_month}/{selected_year}' if yoy==True else f'Revenue Product in {selected_month}/{selected_year}',
         xaxis_title='Product',
-        yaxis_title='Total Sold',
+        yaxis_title='Total Revenue Product',
         yaxis2=dict(title='Cumulative', overlaying='y', side='right', showgrid=False),
         plot_bgcolor='#343a40',
         paper_bgcolor='#343a40',
@@ -221,39 +229,153 @@ def update_revenue_product_bar_plot(selected_year, data=data):
 
     return fig
 
-def update_num_transaction(selected_year, selected_region, start_date, end_date, data=data):
+def update_product_trans_revenue_bar_plot(selected_year, selected_month, data=data, yoy=True):
+    if yoy == True:
+        data.yoy_filtering_data(selected_year, selected_month)
+    else:
+        data.month_filtering_data(selected_year, selected_month)
+    # Group by year and month, and calculate the sum of sales, sold products, and transactions for each group
+    # analyzed_data = data.df_transaction_products.groupby(['Year', 'Month'])['Produk'].size().reset_index(name='total_prodcuts')
+    # analyzed_data['total_sales'] = data.df_transaction.groupby(['Year', 'Month'])['Penjualan'].sum().reset_index(name='total_sales')
+    # analyzed_data['total_transactions'] = data.df_transaction.groupby(['Year', 'Month']).size().reset_index(name='total_transactions')
+    analyzed_data = data.df_transaction.groupby(['Year', 'Month']).agg(
+        total_sales=('Penjualan', 'sum'),
+        total_transactions=('Penjualan', 'size')
+    ).reset_index()
+    grouped_sold_products = data.df_transaction_products.groupby(['Year', 'Month']).agg(
+        total_sold_products=('Produk', 'size')
+    ).reset_index()
+
+    analyzed_data = pd.merge(analyzed_data, grouped_sold_products, on=['Year', 'Month'], how='left')
+
+
+    # print(analyzed_data)
+    # Calculate the ratio of sales/transaction and sold products/transaction for each month
+    analyzed_data['Sales/Transaction'] = analyzed_data['total_sales'] / analyzed_data['total_transactions']
+    analyzed_data['Sold Products/Transaction'] = analyzed_data['total_sold_products'] / analyzed_data['total_transactions']
+    analyzed_data['Month-Year'] = analyzed_data['Month'].astype(str) + '/' + analyzed_data['Year'].astype(str)
+
+    # Create stacked bar plot
+    fig = px.line(
+        analyzed_data,
+        x=analyzed_data['Month-Year'],
+        y='Sales/Transaction',
+        color_discrete_sequence=['green'],
+        title=f'Ratio Sales/Transaction and Sold Product/Transaction\nYoY - {selected_month}/{selected_year}' if yoy==True else f'Ratio Sales/Transaction and Sold Product/Transaction\nin {selected_month}/{selected_year}'
+    )
+
+    fig.add_trace(go.Scatter(
+        x=analyzed_data['Month-Year'],
+        y=analyzed_data['Sold Products/Transaction'],
+        mode='lines+markers',
+        yaxis='y2'
+    ))
+
+    fig.update_layout(
+        xaxis_title='Month',
+        yaxis=dict(title='Sales/Transaction', side='left', rangemode='tozero'),
+        yaxis2=dict(title='Sold Product/Transaction', overlaying='y', side='right', showgrid=False, rangemode='tozero'),
+        plot_bgcolor='#343a40',
+        paper_bgcolor='#343a40',
+        font_color='white',
+        legend=dict(title=dict(text='Property Type'), orientation='h', yanchor="bottom", y=1.02,xanchor="right",x=1),
+        xaxis=dict(
+            tickfont=dict(color='white', size=12),
+            tickangle=45
+        )
+    )
+
+    return fig
+
+def update_customer_transaction_bar_plot(start_date, end_date, data=data):
+    data.date_filtering_data(start_date, end_date)
+    total_count, grouped_data = data.count_customer_transaction()
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=grouped_data['Sales Group'],
+        y=grouped_data['Percentage'],
+        hoverinfo='y',
+        marker_color='#90a4ae',
+    ))
+
+    fig.update_layout(
+        legend_title_text=f"# of Transaction: ${total_count}",
+        legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.01)
+    )
+
+    fig.update_layout(
+        title='Number of Transactions by Sales Group',
+        xaxis_title='Sales Group',
+        yaxis_title='Percentage of Transactions (%)',
+        plot_bgcolor='#343a40',
+        paper_bgcolor='#343a40',
+        font_color='white',
+        showlegend=False
+    )
+
+    return fig
+    
+def update_num_transaction(selected_year, selected_month, data=data, yoy=True):
+    if yoy == True:
+        data.yoy_filtering_data(selected_year, selected_month)
+    else:
+        data.month_filtering_data(selected_year, selected_month)
     sum_transaction = data.count_sum_transaction()
     sum_transaction_text = "{:,.0f}".format(sum_transaction)
     return sum_transaction_text
 
-def update_sum_revenue(selected_year, selected_region, start_date, end_date, data=data):   
+def update_sum_revenue(selected_year, selected_month, data=data, yoy=True): 
+    if yoy == True:
+        data.yoy_filtering_data(selected_year, selected_month)
+    else:
+        data.month_filtering_data(selected_year, selected_month)
     sum_sales = data.count_sum_revenue()
     sum_sales_text = "Rp {:,.0f}".format(sum_sales)
     return sum_sales_text
 
 # def update_sum_profit(selected_year, selected_region, start_date, end_date, data=data):
 
-def update_sum_sold_products(selected_year, selected_region, start_date, end_date, data=data):
+def update_sum_sold_products(selected_year, selected_month, data=data, yoy=True):
+    if yoy == True:
+        data.yoy_filtering_data(selected_year, selected_month)
+    else:
+        data.month_filtering_data(selected_year, selected_month)
     sum_sold_products = data.count_sum_sold_products()
     sum_sold_products_text = "{:,.0f}".format(sum_sold_products)
     return sum_sold_products_text
 
-def update_ratio_product_transaction(selected_year, data=data):
+def update_ratio_product_transaction(selected_year, selected_month, data=data, yoy=True):
+    if yoy == True:
+        data.yoy_filtering_data(selected_year, selected_month)
+    else:
+        data.month_filtering_data(selected_year, selected_month)
     ratio_product_transaction = data.count_ratio_product_transaction()
     ratio_product_transaction_text = "{:,.2f}".format(ratio_product_transaction)
     return ratio_product_transaction_text
 
-def update_ratio_revenue_transaction(selected_year, data=data):
+def update_ratio_revenue_transaction(selected_year, selected_month, data=data, yoy=True):
+    if yoy == True:
+        data.yoy_filtering_data(selected_year, selected_month)
+    else:
+        data.month_filtering_data(selected_year, selected_month)
     ratio_revenue_transaction = data.count_ratio_revenue_transaction()
     ratio_revenue_transaction_text = "Rp {:,.2f}".format(ratio_revenue_transaction)
     return ratio_revenue_transaction_text
 
-def update_ratio_revenue_product(selected_year, data=data):
+def update_ratio_revenue_product(selected_year, selected_month, data=data, yoy=True):
+    if yoy == True:
+        data.yoy_filtering_data(selected_year, selected_month)
+    else:
+        data.month_filtering_data(selected_year, selected_month)
     ratio_revenue_product = data.count_ratio_revenue_product()
     ratio_revenue_product_text = "Rp {:,.2f}".format(ratio_revenue_product)
     return ratio_revenue_product_text
 
-def update_product_category_pie_chart(selected_year,data=data):
+def update_product_category_pie_chart(selected_year, selected_month, data=data, yoy=True):
+    if yoy == True:
+        data.yoy_filtering_data(selected_year, selected_month)
+    else:
+        data.month_filtering_data(selected_year, selected_month)
     analyzed_data = data.count_product_category()
     fig = px.pie(analyzed_data, values='Total Revenue per Category', names='Category')
 
@@ -263,255 +385,4 @@ def update_product_category_pie_chart(selected_year,data=data):
         plot_bgcolor='#343a40',  # Change plot background color
         paper_bgcolor='#343a40',
     )
-    return fig
-
-
-def update_price_change(selected_year, selected_region):
-    # Load the CSV file with price change data based on the selected year
-    csv_file_path = f'processed_data/avg_price_delta/avg_price_delta_{selected_year}.csv'
-    data = pd.read_csv(csv_file_path)
-
-    # Filter the data to the selected region
-    data = data[data['region'] == selected_region]
-
-    # Fetch the configuration for the selected region
-    region_config = app_config['regions'][selected_region]
-
-    # Check if geojson is loaded for the selected region, load if not
-    read_geojson(selected_region)
-
-    key_min = np.percentile(data.delta, 5)
-    key_max = np.percentile(data.delta, 98)
-
-    # Create choropleth map
-    fig = px.choropleth_mapbox(
-        data,
-        geojson=geojson_data,
-        locations='postcode_sector',
-        featureidkey='properties.name',
-        color='delta',
-        color_continuous_scale='Viridis',
-        mapbox_style='carto-positron',
-        center=region_config['center'],
-        zoom=region_config['zoom'],
-        opacity=0.5,
-        labels={'delta': 'Price Change (%)'},
-        title=f'Year-on-year average price change for {selected_region} in {selected_year}',
-        range_color=(key_min,key_max),
-    )
-
-    # Update layout attributes
-    fig.update_layout(
-        mapbox=dict(style='carto-positron'),
-        paper_bgcolor='#343a40',
-        plot_bgcolor='#343a40',
-        font_color='white'
-    )
-
-    return fig
-
-def update_price_change_boxplot(selected_year,selected_region):
-    start_year = int(selected_year) - 2
-    end_year = int(selected_year) + 1
-
-    # Create an empty list to store DataFrames
-    all_data = []
-
-    for year in range(start_year, end_year):
-        # Load the preprocessed csvs with price change data for each year
-        csv_file_path = f'processed_data/avg_price_delta/avg_price_delta_{year}.csv'
-        year_data = pd.read_csv(csv_file_path)
-
-        # Append the DataFrame to the list
-        all_data.append(year_data)
-
-    # Concatenate all dfs in the list
-    data = pd.concat(all_data, ignore_index=True)
-
-    # Filter the data to the selected region
-    data = data[data['region'] == selected_region]
-
-    y_min = np.percentile(data.delta, 1)
-    y_max = np.percentile(data.delta, 99)
-
-    # Create box plot
-    fig = px.box(
-        data,
-        x='year',
-        y='delta',
-        title=f'Year-on-year sector average price change for {selected_region} between {start_year} and {selected_year}',
-        labels={'delta': 'Price Change (%)'},
-        color='year',
-        range_y=[y_min, y_max],
-    )
-
-    # Update layout
-    fig.update_layout(
-        xaxis_title='Year',
-        yaxis_title='Price Change (%)',
-        plot_bgcolor='#343a40',
-        paper_bgcolor='#343a40',
-        font_color='white'
-    )
-
-    return fig
-
-def update_fastest_growing_plot(selected_year, selected_region,slider_value):
-    # Load the CSV file with price change data based on the selected year
-    csv_file_path = f'processed_data/avg_price_delta/avg_price_delta_{selected_year}.csv'
-    data = pd.read_csv(csv_file_path)
-
-    # Filter the data to the selected region
-    data = data[data['region'] == selected_region]
-
-    # Sort the data by the delta column in descending order
-    data = data.sort_values('delta', ascending=False)
-
-    # Select the top X rows as selected by slider
-    top_10_data = data.head(slider_value)
-
-    # Fetch the configuration for the selected region
-    region_config = app_config['regions'][selected_region]
-
-    # Check if geojson is loaded for the selected region, load if not
-    read_geojson(selected_region)
-
-    # Create choropleth map
-    fig = px.choropleth_mapbox(
-        top_10_data,
-        geojson=geojson_data,
-        locations='postcode_sector',
-        featureidkey='properties.name',
-        color='delta',
-        color_continuous_scale='Viridis',
-        mapbox_style='carto-positron',
-        center=region_config['center'],
-        zoom=region_config['zoom'],
-        opacity=0.5,
-        labels={'delta': 'Price Change (%)'},
-        title= f'Top {slider_value} fastest growing sectors in {selected_region} in {selected_year}'
-    )
-
-    # Update layout attributes
-    fig.update_layout(
-        mapbox=dict(style='carto-positron'),
-        paper_bgcolor='#343a40',
-        plot_bgcolor='#343a40',
-        font_color='white'
-    )
-
-    return fig
-
-def update_fastest_declining_plot(selected_year, selected_region, slider_value):
-    # Load the CSV file with price change data based on the selected year
-    csv_file_path = f'processed_data/avg_price_delta/avg_price_delta_{selected_year}.csv'
-    data = pd.read_csv(csv_file_path)
-
-    # Filter the data to the selected region
-    data = data[data['region'] == selected_region]
-
-    # Sort the data by the 'delta' column in descending order
-    data = data.sort_values('delta', ascending=False)
-
-    # Select the top 10 rows
-    top_10_data = data.tail(slider_value)
-
-    # Fetch the configuration for the selected region
-    region_config = app_config['regions'][selected_region]
-
-    # Check if geojson is loaded for the selected region, load if not
-    read_geojson(selected_region)
-
-    # Create choropleth map
-    fig = px.choropleth_mapbox(
-        top_10_data,
-        geojson=geojson_data,
-        locations='postcode_sector',
-        featureidkey='properties.name',
-        color='delta',
-        color_continuous_scale='Viridis',
-        mapbox_style='carto-positron',
-        center=region_config['center'],
-        zoom=region_config['zoom'],
-        opacity=0.5,
-        labels={'delta': 'Price Change (%)'},
-        title= f'Top {slider_value} fastest declining sectors in {selected_region} in {selected_year}'
-    )
-
-    # Update layout attributes
-    fig.update_layout(
-        mapbox=dict(style='carto-positron'),
-        paper_bgcolor='#343a40',
-        plot_bgcolor='#343a40',
-        font_color='white'
-    )
-
-    return fig
-
-def update_volume_plot(selected_year, selected_region):
-    # Load data
-    csv_file_path = f'processed_data/volume_by_year/region_total_volume_{selected_year}.csv'
-    data = pd.read_csv(csv_file_path)
-
-    fig = px.bar(data,
-                  x='month',
-                  y='volume',
-                  color='region',
-                  markers=True,
-                  title=f'Volume trend for all regions in {selected_year} by month')
-    
-    # Update layout
-    fig.update_layout(
-        xaxis_title='Month',
-        yaxis_title='Volume',
-        plot_bgcolor='#343a40',
-        paper_bgcolor='#343a40',
-        font_color='white'
-    )
-
-    return fig
-
-def update_volume_map(selected_year, selected_region):
-    # Load the CSV file based on the selected year
-    csv_file_path = f'processed_data/average_price_by_year/region_data_{selected_year}.csv'
-    data = pd.read_csv(csv_file_path)
-
-    # Filter the data to the selected region
-    data = data[data['region'] == selected_region]
-
-    # Check if geojson is loaded for the selected region, load if not
-    read_geojson(selected_region)
-
-    # Fetch the configuration for the selected region
-    region_config = app_config['regions'][selected_region]
-
-    key_min = np.percentile(data.volume, 1)
-    key_max = np.percentile(data.volume, 99)
-
-    # Create choropleth map
-    fig = px.choropleth_mapbox(
-        data,
-        geojson=geojson_data,
-        locations='postcode_sector',
-        featureidkey='properties.name',
-        color='volume',
-        color_continuous_scale='Viridis',
-        range_color= [key_min,key_max],
-        mapbox_style='carto-positron',
-        center=region_config['center'],
-        zoom=region_config['zoom'],
-        opacity=0.5,
-        labels={'volume': 'Volume'},
-        title=f'Volume by postcode sector for {selected_region} in {selected_year}',
-        hover_data={'volume': True},
-    )
-
-    # Update layout attributes
-    fig.update_layout(
-        mapbox=dict(style='carto-positron'),
-        paper_bgcolor='#343a40',
-        plot_bgcolor='#343a40',
-        font_color='white'
-    )
-
     return fig

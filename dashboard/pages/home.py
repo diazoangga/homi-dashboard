@@ -3,7 +3,7 @@ from dash import dcc, html, Input, Output, callback
 import dash_bootstrap_components as dbc
 from helpers import *
 from config import app_config
-from datetime import date
+
 
 dash.register_page(__name__, path='/')
 
@@ -12,15 +12,6 @@ layout = dbc.Container(
         dbc.Row(
     [
         dbc.Col(
-            dcc.DatePickerRange(
-                id='my-date-picker-range',
-                min_date_allowed=date(1995, 8, 5),
-                max_date_allowed=date(2017, 9, 19),
-                initial_visible_month=date(2017, 8, 5),
-                end_date=date(2017, 8, 25)
-            )
-        ),
-        dbc.Col(
             html.Div("Select month:", className="dropdown-label"),
             width=1,
         ),
@@ -28,10 +19,10 @@ layout = dbc.Container(
             dcc.Dropdown(
                 id='month-dropdown',
                 options=[
-                    {'label': region, 'value': region}
-                    for region in app_config['regions']
+                    {'label': month.split(', ')[0], 'value': month.split(', ')[1]}
+                    for month in app_config['months']
                 ],
-                value='Januari',  # Default selected region
+                value=1,  # Default selected region
             ),
             width=2
         ),
@@ -43,7 +34,7 @@ layout = dbc.Container(
             dcc.Dropdown(
                 id='year-dropdown',
                 options=[{"label": i, "value": i} for i in app_config['years']],
-                value='2023',  # Default selected year
+                value=2024,  # Default selected year
             ),
             width=2,
         ),
@@ -65,11 +56,11 @@ layout = dbc.Container(
                               style={'textAlign': 'center'}
                         )
                     ],
-                    style={'background-color': '#1f2c56',
+                    style={'background-color': '#607d8b',
                            'border-radius': '5px',
                            'margin': '25px',
                            'padding': '15px',
-                           'box-shadow': '2px 2px 2px #1f2c56'}
+                           'box-shadow': '2px 2px 2px #607d8b'}
                     )               
                 ),
 
@@ -85,11 +76,11 @@ layout = dbc.Container(
                               style={'textAlign': 'center'}
                         )
                     ],
-                    style={'background-color': '#1f2c56',
+                    style={'background-color': '#607d8b',
                            'border-radius': '5px',
                            'margin': '25px',
                            'padding': '15px',
-                           'box-shadow': '2px 2px 2px #1f2c56'}
+                           'box-shadow': '2px 2px 2px #607d8b'}
                     )               
                 ),
 
@@ -105,11 +96,11 @@ layout = dbc.Container(
                               style={'textAlign': 'center'}
                         )
                     ],
-                    style={'background-color': '#1f2c56',
+                    style={'background-color': '#607d8b',
                            'border-radius': '5px',
                            'margin': '25px',
                            'padding': '15px',
-                           'box-shadow': '2px 2px 2px #1f2c56'}
+                           'box-shadow': '2px 2px 2px #607d8b'}
                     )               
                 ),
                 dbc.Col(
@@ -124,11 +115,11 @@ layout = dbc.Container(
                               style={'textAlign': 'center'}
                         )
                     ],
-                    style={'background-color': '#1f2c56',
+                    style={'background-color': '#607d8b',
                            'border-radius': '5px',
                            'margin': '25px',
                            'padding': '15px',
-                           'box-shadow': '2px 2px 2px #1f2c56'}
+                           'box-shadow': '2px 2px 2px #607d8b'}
                     )               
                 ),
 
@@ -144,11 +135,11 @@ layout = dbc.Container(
                               style={'textAlign': 'center'}
                         )
                     ],
-                    style={'background-color': '#1f2c56',
+                    style={'background-color': '#607d8b',
                            'border-radius': '5px',
                            'margin': '25px',
                            'padding': '15px',
-                           'box-shadow': '2px 2px 2px #1f2c56'}
+                           'box-shadow': '2px 2px 2px #607d8b'}
                     )               
                 ),
 
@@ -164,11 +155,11 @@ layout = dbc.Container(
                               style={'textAlign': 'center'}
                         )
                     ],
-                    style={'background-color': '#1f2c56',
+                    style={'background-color': '#607d8b',
                            'border-radius': '5px',
                            'margin': '25px',
                            'padding': '15px',
-                           'box-shadow': '2px 2px 2px #1f2c56'}
+                           'box-shadow': '2px 2px 2px #607d8b'}
                     )               
                 ),
 
@@ -197,14 +188,34 @@ layout = dbc.Container(
             [
                 dbc.Col(
                     dcc.Graph(
-                        id='transaction-monthly-bar-plot',
+                        id='revenue-per-month-bar-plot',
                         style={'height': '60vh'}
                     ),
                     width=6
                 ),
                 dbc.Col(
                     dcc.Graph(
+                        id='revenue-per-day-bar-plot',
+                        style={'height': '60vh'}
+                    ),
+                    width=6
+                ),
+            ]
+        ),
+
+        dbc.Row(
+            [
+                dbc.Col(
+                    dcc.Graph(
                         id='transaction-hourly-bar-plot',
+                        style={'height': '60vh'}
+                    ),
+                    width=6
+                ),
+
+                dbc.Col(
+                    dcc.Graph(
+                        id='product-trans-revenue-bar-plot',
                         style={'height': '60vh'}
                     ),
                     width=6
@@ -217,17 +228,10 @@ layout = dbc.Container(
             [
                 dbc.Col(
                     dcc.Graph(
-                        id='revenue-per-month-bar-plot',
-                        style={'height': '60vh'}
-                    ),
-                    width=6
-                ),
-                dbc.Col(
-                    dcc.Graph(
                         id='sold-product-bar-plot',
                         style={'height': '60vh'}
                     ),
-                    width=6
+                    width=12
                 ),
             ]
         ),
@@ -264,66 +268,72 @@ layout = dbc.Container(
 #     return update_map(selected_year, selected_region)
 
 # Define callback to update the bar plot based on selected region
-@callback(
-    Output('transaction-monthly-bar-plot', 'figure'),
-    [Input('year-dropdown', 'value'),
-     Input('month-dropdown', 'value'),
-     Input('my-date-picker-range', 'start_date'),
-     Input('my-date-picker-range', 'end_date')]
-)
-def update_monthly_transaction_bar_plot_callback(selected_year,selected_region, start_date, end_date):
-    return update_montly_transaction_bar_plot(selected_year,selected_region, start_date, end_date)
 
 @callback(
     Output('transaction-hourly-bar-plot', 'figure'),
     [Input('year-dropdown', 'value'),
-     Input('month-dropdown', 'value'),
-     Input('my-date-picker-range', 'start_date'),
-     Input('my-date-picker-range', 'end_date')]
+     Input('month-dropdown', 'value')]
 )
-def update_hourly_transaction_bar_plot_callback(selected_year, selected_region, start_date, end_date):
-    return update_hourly_transaction_bar_plot(selected_year, selected_region, start_date, end_date)
+def update_hourly_transaction_bar_plot_callback(selected_year,selected_month):
+    return update_hourly_transaction_bar_plot(selected_year,selected_month)
 
 @callback(
     Output('sold-product-bar-plot', 'figure'),
-    Input('year-dropdown', 'value')
+    [Input('year-dropdown', 'value'),
+     Input('month-dropdown', 'value')]
 )
-def update_sold_product_bar_plot_callback(selected_year):
-    return update_sold_product_bar_plot(selected_year)
+def update_sold_product_bar_plot_callback(selected_year,selected_month):
+    return update_sold_product_bar_plot(selected_year,selected_month)
 
 @callback(
     Output('revenue-product-bar-plot', 'figure'),
-    Input('year-dropdown', 'value')
+    [Input('year-dropdown', 'value'),
+     Input('month-dropdown', 'value')],
+     
 )
-def update_revenue_product_bar_plot_callback(selected_year):
-    return update_revenue_product_bar_plot(selected_year)
+def update_revenue_product_bar_plot_callback(selected_year,selected_month):
+    return update_revenue_product_bar_plot(selected_year,selected_month)
 
 @callback(
     Output('revenue-per-month-bar-plot', 'figure'),
-    Input('year-dropdown', 'value')
+    [Input('year-dropdown', 'value'),
+     Input('month-dropdown', 'value')]
 )
-def update_revenue_per_month_bar_plot_callback(selected_year):
-    return update_revenue_per_month_bar_plot(selected_year)
+def update_revenue_per_month_bar_plot_callback(selected_year,selected_month):
+    return update_revenue_per_month_bar_plot(selected_year,selected_month)
+
+@callback(
+    Output('revenue-per-day-bar-plot', 'figure'),
+    [Input('year-dropdown', 'value'),
+     Input('month-dropdown', 'value')]
+)
+def update_revenue_per_day_bar_plot_callback(selected_year,selected_month):
+    return update_revenue_per_day_bar_plot(selected_year,selected_month)
+
+@callback(
+    Output('product-trans-revenue-bar-plot', 'figure'),
+    [Input('year-dropdown', 'value'),
+     Input('month-dropdown', 'value')],
+     
+)
+def update_product_trans_revenue_bar_plot_callback(selected_year,selected_month):
+    return update_product_trans_revenue_bar_plot(selected_year,selected_month)
 
 @callback(
     Output('num-transaction', 'children'),
     [Input('year-dropdown', 'value'),
-     Input('month-dropdown', 'value'),
-     Input('my-date-picker-range', 'start_date'),
-     Input('my-date-picker-range', 'end_date')]
+     Input('month-dropdown', 'value')]
 )
-def update_num_transaction_callback(selected_year, selected_region, start_date, end_date):
-    return update_num_transaction(selected_year, selected_region, start_date, end_date)
+def update_num_transaction_callback(selected_year,selected_month):
+    return update_num_transaction(selected_year,selected_month)
 
 @callback(
     Output('sum-revenue', 'children'),
     [Input('year-dropdown', 'value'),
-     Input('month-dropdown', 'value'),
-     Input('my-date-picker-range', 'start_date'),
-     Input('my-date-picker-range', 'end_date')]
+     Input('month-dropdown', 'value')]
 )
-def update_sum_revenue_callback(selected_year, selected_region, start_date, end_date):
-    return update_sum_revenue(selected_year, selected_region, start_date, end_date)
+def update_sum_revenue_callback(selected_year,selected_month):
+    return update_sum_revenue(selected_year,selected_month)
 
 # @callback(
 #     Output('sum-profit', 'figure'),
@@ -338,30 +348,31 @@ def update_sum_revenue_callback(selected_year, selected_region, start_date, end_
 @callback(
     Output('sum-sold-products', 'children'),
     [Input('year-dropdown', 'value'),
-     Input('month-dropdown', 'value'),
-     Input('my-date-picker-range', 'start_date'),
-     Input('my-date-picker-range', 'end_date')]
+     Input('month-dropdown', 'value')]
 )
-def update_sum_sold_products_callback(selected_year, selected_region, start_date, end_date):
-    return update_sum_sold_products(selected_year, selected_region, start_date, end_date)
+def update_sum_sold_products_callback(selected_year,selected_month):
+    return update_sum_sold_products(selected_year,selected_month)
 
 @callback(
     Output('ratio-product-transaction', 'children'),
-    Input('year-dropdown', 'value')
+    [Input('year-dropdown', 'value'),
+     Input('month-dropdown', 'value')]
 )
-def update_ratio_product_transaction_callback(selected_year):
-    return update_ratio_product_transaction(selected_year)
+def update_ratio_product_transaction_callback(selected_year,selected_month):
+    return update_ratio_product_transaction(selected_year,selected_month)
 
 @callback(
     Output('ratio-revenue-transaction', 'children'),
-    Input('year-dropdown', 'value')
+    [Input('year-dropdown', 'value'),
+     Input('month-dropdown', 'value')]
 )
-def update_ratio_revenue_transaction_callback(selected_year):
-    return update_ratio_revenue_transaction(selected_year)
+def update_ratio_revenue_transaction_callback(selected_year,selected_month):
+    return update_ratio_revenue_transaction(selected_year,selected_month)
 
 @callback(
     Output('ratio-revenue-product', 'children'),
-    Input('year-dropdown', 'value')
+    [Input('year-dropdown', 'value'),
+     Input('month-dropdown', 'value')]
 )
-def update_ratio_revenue_product_callback(selected_year):
-    return update_ratio_revenue_product(selected_year)
+def update_ratio_revenue_product_callback(selected_year,selected_month):
+    return update_ratio_revenue_product(selected_year,selected_month)
